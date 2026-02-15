@@ -1,329 +1,301 @@
 import tkinter as tk
-from tkinter import ttk
-from datetime import datetime
+from tkinter import ttk, messagebox
+from tkcalendar import DateEntry
+from Frontend.Theme.colors import PRIMARY_COLOR, Heading_table_color
+
 
 class AddCongeInterface(tk.Toplevel):
     def __init__(self, parent, employe=None):
         super().__init__(parent)
-        self.title("➕ Nouveau Congé")
-        self.geometry("500x650")
-        self.configure(bg="#FAFAFA")
+
+        self.title("إضافة عطلة")
+        self.geometry("750x800")
         self.resizable(False, False)
+
+        self.employe = employe or {
+            "nom": "محمد",
+            "prenom": "أحمد",
+            "grade": "موظف إداري"
+        }
+
+        # ================= VARIABLES =================
+        self.nom_var = tk.StringVar(value=self.employe['nom'])
+        self.prenom_var = tk.StringVar(value=self.employe['prenom'])
+        self.grade_var = tk.StringVar(value=self.employe['grade'])
+        self.type_conge_var = tk.StringVar(value="سنوية")
+        self.lieu_var = tk.StringVar(value="داخل التراب الوطني")
+        self.nbr_jours_var = tk.StringVar(value="0")
+
+        self.periodes_conge = []
         
-        # Variables
-        self.employe = employe or {}
-        
-        # Configuration des polices
-        self.font_bold = ("Segoe UI", 14, "bold")
-        self.font_normal = ("Segoe UI", 11)
-        self.font_small = ("Segoe UI", 10)
-        
-        # Couleurs modernes
+        # Variables pour les widgets dynamiques
+        self.periode_listbox = None
+        self.delete_button = None
+        self.periodes_frame = None
+
+        # ================= COLORS =================
         self.colors = {
-            "primary": "#7C3AED",      # Violet
-            "surface": "#FFFFFF",      # Blanc
-            "background": "#FAFAFA",   # Gris très clair
-            "text": "#1F2937",         # Gris foncé
-            "text_light": "#6B7280",   # Gris moyen
-            "border": "#E5E7EB",       # Gris clair
-            "error": "#EF4444",        # Rouge
-            "success": "#10B981"       # Vert
+            "bg": "#f5f6fa",
+            "card": "#FFFFFF",
+            "header": PRIMARY_COLOR,
+            "header_text": "#FFFFFF",
+            "submit": Heading_table_color,
+            "cancel": "#e74c3c",
+            "border": "#e0e0e0",
+            "delete": "#e67e22"
         }
-        
-        # Construction
-        self._create_layout()
-        self._center_window()
-        
-        # Bind Enter pour validation
-        self.bind('<Return>', lambda e: self._save())
-        
-    def _create_layout(self):
-        """Crée l'interface minimaliste"""
-        
-        # ────────── HEADER ──────────
-        header_frame = tk.Frame(self, bg=self.colors["surface"], height=80)
-        header_frame.pack(fill="x")
-        header_frame.pack_propagate(False)
-        
-        # Titre avec ligne décorative
-        title_container = tk.Frame(header_frame, bg=self.colors["surface"])
-        title_container.pack(expand=True)
-        
-        tk.Label(title_container,
-                text="إضافة عطلة",
-                font=("Segoe UI", 20, "bold"),
-                bg=self.colors["surface"],
-                fg=self.colors["text"]).pack()
-        
-        tk.Label(title_container,
-                text="للموظف: " + self.employe.get("nom", "غير محدد"),
-                font=self.font_small,
-                bg=self.colors["surface"],
-                fg=self.colors["text_light"]).pack(pady=(5, 0))
-        
-        # ────────── CONTENT ──────────
-        content_frame = tk.Frame(self, bg=self.colors["background"])
-        content_frame.pack(fill="both", expand=True, padx=30, pady=20)
-        
-        # Section Employé (minimal)
-        emp_info = tk.Frame(content_frame, bg=self.colors["background"])
-        emp_info.pack(fill="x", pady=(0, 20))
-        
-        # Nom et grade sur une ligne
-        name_frame = tk.Frame(emp_info, bg=self.colors["surface"], 
-                             relief="flat", bd=0)
-        name_frame.pack(fill="x", pady=(0, 5))
-        
-        # Badge nom
-        name_badge = tk.Label(name_frame,
-                            text=self.employe.get("nom", "غير محدد"),
-                            font=("Segoe UI", 12, "bold"),
-                            bg="#F3E8FF",  # Violet très clair
-                            fg=self.colors["primary"],
-                            padx=15,
-                            pady=8)
-        name_badge.pack(side="right")
-        
-        # Badge grade
-        grade_badge = tk.Label(name_frame,
-                             text=self.employe.get("grade", "غير محدد"),
-                             font=self.font_small,
-                             bg=self.colors["border"],
-                             fg=self.colors["text"],
-                             padx=12,
-                             pady=6)
-        grade_badge.pack(side="right", padx=(5, 0))
-        
-        # ────────── FORM ──────────
-        form_frame = tk.Frame(content_frame, bg=self.colors["background"])
-        form_frame.pack(fill="both", expand=True)
-        
-        # Année
-        self.annee_var = tk.StringVar()
-        self._create_form_field(form_frame, "السنة", "2024", var=self.annee_var)
-        
-        # Type
-        self.type_var = tk.StringVar(value="سنوية")
-        self._create_combo_field(form_frame, "نوع العطلة", 
-                                ["سنوية", "مرضية", "أمومة", "استثنائية"], 
-                                var=self.type_var)
-        
-        # Dates
-        dates_frame = tk.Frame(form_frame, bg=self.colors["background"])
-        dates_frame.pack(fill="x", pady=10)
-        
-        self.debut_var = tk.StringVar()
-        self._create_form_field(dates_frame, "من", "01/01/2024", 
-                               var=self.debut_var, width=20)
-        
-        self.fin_var = tk.StringVar()
-        self._create_form_field(dates_frame, "إلى", "15/01/2024", 
-                               var=self.fin_var, width=20, padx=(10, 0))
-        
-        # Jours
-        self.jours_var = tk.StringVar()
-        self._create_form_field(form_frame, "عدد الأيام", "15", 
-                               var=self.jours_var)
-        
-        # Lieu
-        self.lieu_var = tk.StringVar()
-        self._create_form_field(form_frame, "المكان", "الجزائر", 
-                               var=self.lieu_var)
-        
-        # ────────── ACTIONS ──────────
-        actions_frame = tk.Frame(content_frame, bg=self.colors["background"])
-        actions_frame.pack(fill="x", pady=(30, 0))
-        
-        # Bouton Annuler (transparent)
-        cancel_btn = tk.Button(actions_frame,
-                             text="إلغاء",
-                             font=self.font_normal,
-                             bg="transparent",
-                             fg=self.colors["text_light"],
-                             bd=0,
-                             padx=30,
-                             pady=12,
-                             cursor="hand2",
-                             command=self.destroy)
-        cancel_btn.pack(side="right")
-        
-        # Effet hover pour annuler
-        cancel_btn.bind("<Enter>", lambda e: cancel_btn.config(fg=self.colors["error"]))
-        cancel_btn.bind("<Leave>", lambda e: cancel_btn.config(fg=self.colors["text_light"]))
-        
-        # Bouton Enregistrer (plein)
-        save_btn = tk.Button(actions_frame,
-                           text="تأكيد الإضافة",
-                           font=self.font_normal,
-                           bg=self.colors["primary"],
-                           fg="white",
-                           bd=0,
-                           padx=40,
-                           pady=12,
-                           cursor="hand2",
-                           command=self._save)
-        save_btn.pack(side="right", padx=(10, 0))
-        
-        # Effet hover pour enregistrer
-        save_btn.bind("<Enter>", lambda e: save_btn.config(bg="#6D28D9"))
-        save_btn.bind("<Leave>", lambda e: save_btn.config(bg=self.colors["primary"]))
-        
-    def _create_form_field(self, parent, label, placeholder, var=None, width=None, **kwargs):
-        """Crée un champ de formulaire minimaliste"""
-        frame = tk.Frame(parent, bg=self.colors["background"])
-        frame.pack(fill="x", pady=8)
-        
-        # Label discret
-        tk.Label(frame,
-                text=label,
-                font=self.font_small,
-                bg=self.colors["background"],
-                fg=self.colors["text_light"]).pack(anchor="e")
-        
-        # Input avec effet de focus
-        entry = tk.Entry(frame,
-                        font=self.font_normal,
-                        bg=self.colors["surface"],
-                        fg=self.colors["text"],
-                        relief="flat",
-                        bd=1,
-                        highlightthickness=1,
-                        highlightcolor=self.colors["border"],
+
+        self._style()
+        self._build_ui()
+        self._center()
+
+    # ================= STYLES =================
+    def _style(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+
+        style.configure("Header.TFrame", background=self.colors["header"])
+        style.configure(
+            "Header.TLabel",
+            background=self.colors["header"],
+            foreground=self.colors["header_text"],
+            font=("Arial", 18, "bold")
+        )
+
+        style.configure("Card.TFrame", background=self.colors["card"])
+        style.configure(
+            "CardTitle.TLabel",
+            background=self.colors["card"],
+            foreground="#000",
+            font=("Arial", 14, "bold")
+        )
+
+        style.configure(
+            "Label.TLabel",
+            background=self.colors["card"],
+            foreground="#000",
+            font=("Segoe UI Semibold", 11)
+        )
+
+        style.configure(
+            "Submit.TButton",
+            font=("Arial", 11, "bold"),
+            background=self.colors["submit"],
+            foreground="black"
+        )
+
+        style.configure(
+            "Cancel.TButton",
+            font=("Arial", 11, "bold"),
+            background=self.colors["cancel"],
+            foreground="black"
+        )
+
+        style.configure(
+            "Delete.TButton",
+            font=("Arial", 10, "bold"),
+            background=self.colors["delete"],
+            foreground="white"
+        )
+
+    # ================= UI =================
+    def _build_ui(self):
+        self.configure(bg=self.colors["bg"])
+        self._header()
+
+        container = tk.Frame(self, bg=self.colors["bg"])
+        container.pack(fill=tk.BOTH, expand=True, padx=25, pady=20)
+
+        self._card_employee(container)
+        self._card_conge(container)
+        self._buttons(container)
+
+    def _header(self):
+        header = ttk.Frame(self, style="Header.TFrame")
+        header.pack(fill=tk.X)
+        ttk.Label(header, text="إضافة عطلة", style="Header.TLabel").pack(pady=15)
+
+    # ================= CARD EMPLOYEE =================
+    def _card_employee(self, parent):
+        card = tk.Frame(parent, bg=self.colors["card"],
                         highlightbackground=self.colors["border"],
-                        insertbackground=self.colors["primary"])
+                        highlightthickness=1)
+        card.pack(fill=tk.X, pady=(0, 15))
+
+        content = ttk.Frame(card, style="Card.TFrame")
+        content.pack(fill=tk.BOTH, padx=20, pady=15)
+
+        content.columnconfigure(0, weight=1)
+        content.columnconfigure(1, weight=1)
+
+        ttk.Label(content, text="معلومات الموظف",
+                  style="CardTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky=tk.E, pady=(0, 15))
+
+        ttk.Label(content, text="اللقب", style="Label.TLabel").grid(
+            row=1, column=1, sticky="ne", pady=(5, 0))
+        ttk.Entry(content, width=25, justify="right",
+                  state="readonly", textvariable=self.nom_var).grid(
+            row=2, column=1, padx=(30, 5), pady=(3, 12))
+
+        ttk.Label(content, text="الإسم", style="Label.TLabel").grid(
+            row=1, column=0, sticky="ne", pady=(5, 0))
+        ttk.Entry(content, width=25, justify="right",
+                  state="readonly", textvariable=self.prenom_var).grid(
+            row=2, column=0, padx=(30, 5), pady=(3, 12))
+
+        ttk.Label(content, text="الرتبة", style="Label.TLabel").grid(
+            row=3, column=1, sticky="ne", pady=(5, 0))
+        ttk.Entry(content, width=25, justify="right",
+                  state="readonly", textvariable=self.grade_var).grid(
+            row=4, column=1, padx=(30, 5), pady=(3, 12))
+
+    # ================= CARD CONGE =================
+    def _card_conge(self, parent):
+        card = tk.Frame(parent, bg=self.colors["card"],
+                        highlightbackground=self.colors["border"],
+                        highlightthickness=1)
+        card.pack(fill=tk.X)
+
+        content = ttk.Frame(card, style="Card.TFrame")
+        content.pack(fill=tk.BOTH, padx=20, pady=15)
+
+        content.columnconfigure(0, weight=1)
+        content.columnconfigure(1, weight=1)
+
+        ttk.Label(content, text="تفاصيل العطلة",
+                  style="CardTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky=tk.E, pady=(0, 15))
+
+        ttk.Label(content, text="نوع العطلة", style="Label.TLabel").grid(
+            row=1, column=1, sticky="ne", pady=(5, 0))
+        ttk.Combobox(content, textvariable=self.type_conge_var,
+                     values=["سنوية", "مرضية", "استثنائية"],
+                     state="readonly", width=23, justify="right").grid(
+            row=2, column=1, padx=(30, 5), pady=(3, 15))
+
+        # ✅ ADDED: Number of days next to type of leave
+        ttk.Label(content, text="عدد الأيام", style="Label.TLabel").grid(
+            row=1, column=0, sticky="ne", pady=(5, 0))
+
         
-        if width:
-            entry.config(width=width)
+        days_frame = ttk.Frame(content, style="Card.TFrame")
+        days_frame.grid(row=2, column=0, padx=(30, 5), pady=(3, 15))
+        ttk.Entry(
+            days_frame,
+            textvariable=self.nbr_jours_var,
+            state="normal",
+            width=10,
+            justify="right"
+        ).pack(side=tk.RIGHT)
+
         
-        entry.pack(fill="x", ipady=10, **kwargs)
-        
-        if var:
-            entry.config(textvariable=var)
-        
-        # Placeholder
-        if placeholder:
-            entry.insert(0, placeholder)
-            entry.config(fg=self.colors["text_light"])
+        ttk.Label(content, text="تاريخ البداية", style="Label.TLabel").grid(
+            row=3, column=1, sticky="ne", pady=(5, 0))
+        self.date_debut = DateEntry(content, width=22, date_pattern="dd/mm/yyyy")
+        self.date_debut.grid(row=4, column=1, padx=(30, 5), pady=(3, 12))
+
+        ttk.Label(content, text="تاريخ النهاية", style="Label.TLabel").grid(
+            row=3, column=0, sticky="ne", pady=(5, 0))
+        self.date_fin = DateEntry(content, width=22, date_pattern="dd/mm/yyyy")
+        self.date_fin.grid(row=4, column=0, padx=(30, 5), pady=(3, 12))
+
+        ttk.Button(content, text="➕ إضافة فترة عطلة",
+                   command=self._add_periode).grid(
+            row=5, column=0, columnspan=2, pady=10)
+
+        # ✅ Stocker le parent pour créer le frame plus tard
+        self.conge_content = content
+
+    # ================= BUTTONS =================
+    def _buttons(self, parent):
+        btns = tk.Frame(parent, bg=self.colors["bg"])
+        btns.pack(pady=20)
+
+        ttk.Button(btns, text="تأكيد",
+                   style="Submit.TButton",
+                   command=self._save).grid(
+            row=0, column=1, padx=10, ipadx=20, ipady=8)
+
+        ttk.Button(btns, text="إلغاء",
+                   style="Cancel.TButton",
+                   command=self.destroy).grid(
+            row=0, column=0, padx=10, ipadx=20, ipady=8)
+
+    # ================= LOGIC =================
+    def _show_periodes_widgets(self):
+        """Afficher le Listbox et le bouton de suppression"""
+        if self.periode_listbox is None:
+            # ✅ Créer le frame seulement maintenant
+            self.periodes_frame = ttk.Frame(self.conge_content, style="Card.TFrame")
+            self.periodes_frame.grid(row=6, column=0, columnspan=2, sticky="we", pady=(10, 0))
             
-            def on_focus_in(e):
-                if entry.get() == placeholder:
-                    entry.delete(0, tk.END)
-                    entry.config(fg=self.colors["text"])
+            # Créer le Listbox
+            self.periode_listbox = tk.Listbox(self.periodes_frame, height=5)
+            self.periode_listbox.pack(fill=tk.BOTH, padx=10, pady=(0, 10))
             
-            def on_focus_out(e):
-                if entry.get() == "":
-                    entry.insert(0, placeholder)
-                    entry.config(fg=self.colors["text_light"])
+            # Créer le bouton de suppression
+            self.delete_button = ttk.Button(
+                self.periodes_frame, 
+                text="🗑️ حذف الفترة المحددة",
+                style="Delete.TButton",
+                command=self._remove_periode
+            )
+            self.delete_button.pack(pady=(0, 10))
+
+    def _add_periode(self):
+        debut = self.date_debut.get_date()
+        fin = self.date_fin.get_date()
+
+        if fin < debut:
+            messagebox.showerror("خطأ", "تاريخ النهاية يجب أن يكون بعد تاريخ البداية")
+            return
+
+        # Ajouter la période
+        self.periodes_conge.append((debut, fin))
+        
+        # ✅ Afficher les widgets s'ils ne sont pas encore visibles
+        self._show_periodes_widgets()
+        
+        # Ajouter à la liste
+        self.periode_listbox.insert(
+            tk.END,
+            f"{debut.strftime('%d/%m/%Y')} → {fin.strftime('%d/%m/%Y')}"
+        )
+        
+        # ✅ Update total days
+        self._update_total_days()
+
+    def _remove_periode(self):
+        sel = self.periode_listbox.curselection()
+        if sel:
+            self.periode_listbox.delete(sel[0])
+            self.periodes_conge.pop(sel[0])
             
-            entry.bind("<FocusIn>", on_focus_in)
-            entry.bind("<FocusOut>", on_focus_out)
-        
-        # Animation de focus
-        def set_focus_color(color):
-            entry.config(highlightcolor=color)
-        
-        entry.bind("<FocusIn>", lambda e: set_focus_color(self.colors["primary"]))
-        entry.bind("<FocusOut>", lambda e: set_focus_color(self.colors["border"]))
-        
-        return entry
-    
-    def _create_combo_field(self, parent, label, options, var=None):
-        """Crée une liste déroulante minimaliste"""
-        frame = tk.Frame(parent, bg=self.colors["background"])
-        frame.pack(fill="x", pady=8)
-        
-        # Label
-        tk.Label(frame,
-                text=label,
-                font=self.font_small,
-                bg=self.colors["background"],
-                fg=self.colors["text_light"]).pack(anchor="e")
-        
-        # Combobox stylisée
-        combo = ttk.Combobox(frame,
-                           values=options,
-                           font=self.font_normal,
-                           state="readonly",
-                           height=10)
-        
-        # Style personnalisé
-        combo.pack(fill="x", ipady=8)
-        
-        if var:
-            combo.config(textvariable=var)
-            if options:
-                var.set(options[0])
-        
-        return combo
-    
-    def _center_window(self):
-        """Centre la fenêtre"""
-        self.update_idletasks()
-        width = self.winfo_width()
-        height = self.winfo_height()
-        x = (self.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.winfo_screenheight() // 2) - (height // 2)
-        self.geometry(f'+{x}+{y}')
-    
+            # ✅ Update total days
+            self._update_total_days()
+            
+            # ✅ Si toutes les périodes sont supprimées, cacher les widgets
+            if len(self.periodes_conge) == 0:
+                self.periodes_frame.grid_forget()
+                self.periode_listbox = None
+                self.delete_button = None
+
+    def _update_total_days(self):
+        """Calculate and update total number of days"""
+        total = sum((fin - debut).days + 1 for debut, fin in self.periodes_conge)
+        self.nbr_jours_var.set(str(total))
+
     def _save(self):
-        """Enregistre le congé avec validation"""
-        # Validation simple
-        if not self.annee_var.get() or self.annee_var.get() == "2024":
-            self._show_error("يرجى إدخال السنة")
+        if not self.periodes_conge:
+            messagebox.showerror("خطأ", "يجب إضافة فترة واحدة على الأقل")
             return
-        
-        if not self.jours_var.get() or self.jours_var.get() == "15":
-            self._show_error("يرجى إدخال عدد الأيام")
-            return
-        
-        # Données
-        data = {
-            "employe_nom": self.employe.get("nom", ""),
-            "employe_grade": self.employe.get("grade", ""),
-            "annee": self.annee_var.get(),
-            "type": self.type_var.get(),
-            "date_debut": self.debut_var.get(),
-            "date_fin": self.fin_var.get(),
-            "jours": self.jours_var.get(),
-            "lieu": self.lieu_var.get(),
-            "date_creation": datetime.now().strftime("%d/%m/%Y %H:%M")
-        }
-        
-        # Simuler sauvegarde
-        print("📝 Congé enregistré:")
-        for key, value in data.items():
-            print(f"  {key}: {value}")
-        
-        # Message de succès
-        self._show_success()
-        
-    def _show_error(self, message):
-        """Affiche un message d'erreur discret"""
-        if hasattr(self, 'error_label'):
-            self.error_label.destroy()
-        
-        self.error_label = tk.Label(self,
-                                  text=message,
-                                  font=self.font_small,
-                                  bg=self.colors["background"],
-                                  fg=self.colors["error"])
-        self.error_label.place(relx=0.5, rely=0.95, anchor="center")
-        
-        # Disparaît après 3 secondes
-        self.after(3000, lambda: self.error_label.destroy() if hasattr(self, 'error_label') else None)
-    
-    def _show_success(self):
-        """Affiche un message de succès et ferme"""
-        success_frame = tk.Frame(self, bg=self.colors["success"])
-        success_frame.place(relx=0.5, rely=0.5, anchor="center")
-        
-        tk.Label(success_frame,
-                text="✓ تمت الإضافة بنجاح",
-                font=self.font_bold,
-                bg=self.colors["success"],
-                fg="white",
-                padx=30,
-                pady=15).pack()
-        
-        # Fermer après 1 seconde
-        self.after(1000, self.destroy)
+            
+        messagebox.showinfo("نجاح", "تم حفظ العطلة بنجاح")
+        self.destroy()
+
+    def _center(self):
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() - self.winfo_width()) // 2
+        y = (self.winfo_screenheight() - self.winfo_height()) // 2
+        self.geometry(f"+{x}+{y}")
