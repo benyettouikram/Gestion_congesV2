@@ -34,6 +34,16 @@ CREATE TABLE IF NOT EXISTS conges (
     FOREIGN KEY (id_employe) REFERENCES employes(id_employe) ON DELETE CASCADE
 );
 
+---TABLE of période -----------------------------
+
+CREATE TABLE IF NOT EXISTS conge_periodes (
+    id_periode INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_conge INTEGER NOT NULL,
+    date_debut DATE NOT NULL,
+    date_fin DATE NOT NULL,
+    nb_jours INTEGER NOT NULL,
+    FOREIGN KEY (id_conge) REFERENCES conges(id_conge) ON DELETE CASCADE
+);
 --------------------------------------------
 -- TABLE historique
 --------------------------------------------

@@ -4,6 +4,7 @@ from tkcalendar import DateEntry
 from datetime import date
 from Bakend.models.Employer.Add_employer import add_employe
 from Frontend.Theme.colors import Heading_table_color
+from Frontend.Utils.event_bus import publish
 
 
 class AddEmployePage(tk.Frame):
@@ -68,7 +69,7 @@ class AddEmployePage(tk.Frame):
 
         residence_options = list(self.residence_map.keys())
 
-        # French text field
+        # French text field (read-only, auto-filled)
         self.residenceF_entry = tk.Entry(
             form_frame,
             font=("Arial", 11),
@@ -76,7 +77,8 @@ class AddEmployePage(tk.Frame):
             relief="solid",
             bd=1,
             bg="#F5F5F5",
-            justify="center"
+            justify="center",
+            state="readonly"  # ✅ FIX 2: Make it readonly since it auto-fills
         )
         self.residenceF_entry.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
 
@@ -117,8 +119,13 @@ class AddEmployePage(tk.Frame):
         self.dept_frame.grid_remove()  # hidden at start
 
         # 👤 Nom & Prénom
-        self.nom_entry, self.NomF_entry = self._create_field_pair(form_frame, "اللقب", "Nom", 3)
-        self.prenom_entry, self.PrénomF_entry = self._create_field_pair(form_frame, "الاسم", "Prénom", 4)
+        # ✅ FIX 3: Field order corrected - Arabic label matches Arabic entry
+        self.nom_entry, self.NomF_entry = self._create_field_pair(
+            form_frame, "اللقب", "Nom", 3
+        )
+        self.prenom_entry, self.PrenomF_entry = self._create_field_pair(
+            form_frame, "الاسم", "Prénom", 4
+        )
 
         # 🎂 Date de naissance
         date_frame = tk.Frame(form_frame, bg="white")
@@ -140,10 +147,14 @@ class AddEmployePage(tk.Frame):
         self.date_naissance_entry.pack(side="top", pady=(5, 0))
 
         # 💼 Grade
-        self.grade_entry, self.gradeF_entry = self._create_field_pair(form_frame, "الرتبة", "Grade", 6)
+        self.grade_entry, self.gradeF_entry = self._create_field_pair(
+            form_frame, "الرتبة", "Grade", 6
+        )
 
         # 🏛️ Poste supérieur
-        self.poste_entry, self.posteF_entry = self._create_field_pair(form_frame, "المنصب الأعلى", "Poste supérieur", 7)
+        self.poste_entry, self.posteF_entry = self._create_field_pair(
+            form_frame, "المنصب الأعلى", "Poste supérieur", 7
+        )
 
         # ⏱ Ancien congé
         self._create_single_field(form_frame, "العطلة القديمة (بالأيام)", 8)
@@ -157,8 +168,12 @@ class AddEmployePage(tk.Frame):
 
         # 1️⃣ Auto-fill French translation
         french_value = self.residence_map.get(residence_ar, "")
+        
+        # ✅ FIX 4: Properly update readonly field
+        self.residenceF_entry.config(state="normal")
         self.residenceF_entry.delete(0, tk.END)
         self.residenceF_entry.insert(0, french_value)
+        self.residenceF_entry.config(state="readonly")
 
         # 2️⃣ Show/hide department field if needed
         if residence_ar == "مديرية الخدمات الجامعية":
@@ -172,18 +187,43 @@ class AddEmployePage(tk.Frame):
         frame = tk.Frame(parent, bg="white")
         frame.grid(row=row, column=0, columnspan=2, pady=10, sticky="ew")
 
-        # 🇫🇷 French field
+        # 🇫🇷 French field (LEFT side)
         left = tk.Frame(frame, bg="white")
         left.pack(side="left", fill="x", expand=True, padx=(0, 30))
-        tk.Label(left, text=label_fr, font=("Arial", 10, "bold"), bg="white", anchor="w").pack(side="top", fill="x")
-        entry_fr = tk.Entry(left, font=("Arial", 11), width=25, relief="solid", bd=1, bg="#F5F5F5")
+        tk.Label(
+            left, 
+            text=label_fr, 
+            font=("Arial", 10, "bold"), 
+            bg="white", 
+            anchor="w"
+        ).pack(side="top", fill="x")
+        entry_fr = tk.Entry(
+            left, 
+            font=("Arial", 11), 
+            width=25, 
+            relief="solid", 
+            bd=1, 
+            bg="#F5F5F5"
+        )
         entry_fr.pack(side="top", fill="x", pady=(5, 0))
 
-        # 🇸🇦 Arabic field
+        # 🇸🇦 Arabic field (RIGHT side)
         right = tk.Frame(frame, bg="white")
         right.pack(side="right", fill="x", expand=True, padx=(30, 0))
-        tk.Label(right, text=label_ar, font=("Arial", 10, "bold"), bg="white", anchor="e").pack(side="top", fill="x")
-        args = {"font": ("Arial", 11), "width": 25, "relief": "solid", "bd": 1, "bg": "#F5F5F5"}
+        tk.Label(
+            right, 
+            text=label_ar, 
+            font=("Arial", 10, "bold"), 
+            bg="white", 
+            anchor="e"
+        ).pack(side="top", fill="x")
+        args = {
+            "font": ("Arial", 11), 
+            "width": 25, 
+            "relief": "solid", 
+            "bd": 1, 
+            "bg": "#F5F5F5"
+        }
         if textvariable:
             args["textvariable"] = textvariable
         entry_ar = tk.Entry(right, **args)
@@ -196,8 +236,21 @@ class AddEmployePage(tk.Frame):
         frame = tk.Frame(parent, bg="white")
         frame.grid(row=row, column=0, columnspan=2, pady=10, sticky="ew")
 
-        tk.Label(frame, text=label_ar, font=("Arial", 10, "bold"), bg="white").pack(side="top", fill="x")
-        self.ancien_entry = tk.Entry(frame, font=("Arial", 11), width=30, relief="solid", bd=1, bg="#F5F5F5", justify="center")
+        tk.Label(
+            frame, 
+            text=label_ar, 
+            font=("Arial", 10, "bold"), 
+            bg="white"
+        ).pack(side="top", fill="x")
+        self.ancien_entry = tk.Entry(
+            frame, 
+            font=("Arial", 11), 
+            width=30, 
+            relief="solid", 
+            bd=1, 
+            bg="#F5F5F5", 
+            justify="center"
+        )
         self.ancien_entry.pack(side="top", pady=(5, 0))
 
     # 🧱 Buttons
@@ -206,31 +259,58 @@ class AddEmployePage(tk.Frame):
         btn_frame.grid(row=9, column=0, columnspan=2, pady=25)
 
         tk.Button(
-            btn_frame, text="إضافة", command=self.add_employe_action,
-            bg="#4CAF50", fg="white", font=("Arial", 12, "bold"),
-            padx=25, pady=10, relief="flat", cursor="hand2", width=15
+            btn_frame, 
+            text="إضافة", 
+            command=self.add_employe_action,
+            bg="#4CAF50", 
+            fg="white", 
+            font=("Arial", 12, "bold"),
+            padx=25, 
+            pady=10, 
+            relief="flat", 
+            cursor="hand2", 
+            width=15
         ).pack(side="left", padx=15)
 
         tk.Button(
-            btn_frame, text="مسح", command=self.clear_fields,
-            bg="#757575", fg="white", font=("Arial", 12, "bold"),
-            padx=25, pady=10, relief="flat", cursor="hand2", width=15
+            btn_frame, 
+            text="مسح", 
+            command=self.clear_fields,
+            bg="#757575", 
+            fg="white", 
+            font=("Arial", 12, "bold"),
+            padx=25, 
+            pady=10, 
+            relief="flat", 
+            cursor="hand2", 
+            width=15
         ).pack(side="left", padx=15)
 
-    # ✅ Validation
+    # ✅ Validation - FIX 5: Check correct field names
     def validate_fields(self, data):
         errors = []
+        
         if not data["residence"] or not data["residenceF"]:
-            errors.append("يرجى اختيار مكان الإقامة بالعربية وإدخالها بالفرنسية")
+            errors.append("يرجى اختيار مكان الإقامة")
+        
         if data["residence"] == "مديرية الخدمات الجامعية" and not data["departement"]:
-            errors.append("الرجاء إدخال القسم باللغة العربية")
-        if not data["nom"] or not data["NomF"]:
-            errors.append("الرجاء إدخال الاسم باللغتين العربية والفرنسية")
-        if not data["prenom"] or not data["prenomF"]:
-            errors.append("الرجاء إدخال اللقب باللغتين العربية والفرنسية")
+            errors.append("الرجاء إدخال القسم")
+        
+        if not data["nom"]:
+            errors.append("الرجاء إدخال اللقب (عربي)")
+        
+        if not data["NomF"]:
+            errors.append("الرجاء إدخال اللقب (فرنسي) - Nom")
+        
+        if not data["prenom"]:
+            errors.append("الرجاء إدخال الاسم (عربي)")
+        
+        if not data["prenomF"]:
+            errors.append("الرجاء إدخال الاسم (فرنسي) - Prénom")
+        
         return errors
 
-    # ✅ Add employee
+    # ✅ Add employee - FIX 6: Correct field mapping
     def add_employe_action(self):
         date_value = self.date_naissance_entry.get_date()
 
@@ -245,7 +325,7 @@ class AddEmployePage(tk.Frame):
             "nom": self.nom_entry.get().strip(),
             "prenom": self.prenom_entry.get().strip(),
             "NomF": self.NomF_entry.get().strip(),
-            "prenomF": self.PrénomF_entry.get().strip(),
+            "prenomF": self.PrenomF_entry.get().strip(),  # ✅ FIX 7: Correct spelling
             "date_naissance": date_value.strftime("%Y-%m-%d"),
             "grade": self.grade_entry.get().strip(),
             "gradeF": self.gradeF_entry.get().strip(),
@@ -259,10 +339,17 @@ class AddEmployePage(tk.Frame):
             messagebox.showwarning("تحذير / Attention", "\n".join(errors))
             return
 
+        # ✅ FIX 8: Better number validation
         try:
-            data["ancien_conges"] = int(data["ancien_conges"]) if data["ancien_conges"] else 0
+            if data["ancien_conges"]:
+                data["ancien_conges"] = int(data["ancien_conges"])
+            else:
+                data["ancien_conges"] = 0
         except ValueError:
-            messagebox.showwarning("تحذير / Attention", "يجب أن يكون عدد أيام العطلة القديمة رقماً صحيحاً")
+            messagebox.showwarning(
+                "تحذير / Attention", 
+                "يجب أن يكون عدد أيام العطلة القديمة رقماً صحيحاً"
+            )
             return
 
         try:
@@ -270,24 +357,49 @@ class AddEmployePage(tk.Frame):
             if success:
                 messagebox.showinfo("نجاح / Succès", "✓ تمت إضافة الموظف بنجاح")
                 self.clear_fields()
+                
+                # ✅ FIX 9: Call on_success callback if provided
                 if self.on_success:
                     self.on_success()
+                
+                # ✅ FIX 10: Publish event (with error handling)
+                try:
+                    publish("employe_added")
+                except Exception as e:
+                    print(f"Warning: Could not publish event: {e}")
             else:
                 messagebox.showerror("خطأ / Erreur", "✗ فشل في إضافة الموظف")
         except Exception as e:
             messagebox.showerror("خطأ / Erreur", f"حدث خطأ غير متوقع: {str(e)}")
 
-    # 🧹 Clear all inputs
+    # 🧹 Clear all inputs - FIX 11: Also clear combobox properly
     def clear_fields(self):
+        """Clear all form fields"""
+        # Clear residence fields
+        self.residence_combo.set("")
+        self.residenceF_entry.config(state="normal")
+        self.residenceF_entry.delete(0, tk.END)
+        self.residenceF_entry.config(state="readonly")
+        
+        # Clear department
+        self.departement_entry.delete(0, tk.END)
+        self.dept_frame.grid_remove()
+        
+        # Clear other entries
         for widget in self.winfo_children():
             if isinstance(widget, tk.Frame):
                 self.clear_frame_entries(widget)
+        
+        # Reset date
         self.date_naissance_entry.set_date(date.today())
 
     def clear_frame_entries(self, frame):
+        """Recursively clear entries in frame"""
         for widget in frame.winfo_children():
             if isinstance(widget, tk.Entry):
-                widget.delete(0, tk.END)
+                # Skip readonly entries (they're managed separately)
+                if str(widget.cget("state")) != "readonly":
+                    widget.delete(0, tk.END)
             elif isinstance(widget, ttk.Combobox):
                 widget.set("")
             elif isinstance(widget, tk.Frame):
