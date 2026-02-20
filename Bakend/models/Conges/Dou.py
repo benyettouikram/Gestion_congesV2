@@ -222,7 +222,7 @@ def get_employe_by_id(employe_id):
         print(f"❌ Erreur get_employe_by_id: {e}")
         return None
 
-def get_employee_pdf_data(employe_id):
+def get_employee_pdf_Ar_data(employe_id):
     """
     ✅ Récupère TOUTES les données nécessaires pour générer un PDF de congé
     Compatible avec votre structure de base de données
@@ -339,7 +339,7 @@ def get_employee_pdf_data(employe_id):
         return None
 
 
-def get_multiple_employees_pdf_data(employe_ids):
+def get_multiple_employees_pdf_Ar_data(employe_ids):
     """
     ✅ Récupère les données PDF pour plusieurs employés en une seule fois
     
@@ -352,7 +352,7 @@ def get_multiple_employees_pdf_data(employe_ids):
     employees_data = []
     
     for employe_id in employe_ids:
-        pdf_data = get_employee_pdf_data(employe_id)
+        pdf_data = get_employee_pdf_Ar_data(employe_id)
         if pdf_data:
             employees_data.append(pdf_data)
         else:
@@ -362,3 +362,152 @@ def get_multiple_employees_pdf_data(employe_ids):
     return employees_data
 
 
+def get_employee_pdf_fr_data(employe_id):
+    """
+    Récupère TOUTES les données nécessaires pour générer un PDF de congé
+    en français.
+
+    Args:
+        employe_id: ID de l'employé (int ou str)
+
+    Returns:
+        Dictionnaire complet avec toutes les données pour le PDF, ou None.
+    """
+    try:
+        employe_id = int(employe_id)  # ✅ ensure integer
+
+        base_dir = os.path.dirname(__file__)
+        db_path = os.path.abspath(
+            os.path.join(base_dir, "..", "..", "database", "gestion_conges.db")
+        )
+
+        if not os.path.exists(db_path):
+            print("❌ Base de données introuvable")
+            return None
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # ✅ FIX 1: use consistent French column names
+        # ✅ FIX 2: correct residence filter value (strip stray spaces)
+        cursor.execute("""
+            SELECT
+                e.id_employe,
+                e.nomF,
+                e.prenomF,
+                e.gradeF,
+                e.residenceF,
+                e.departement,
+                COALESCE(e.ancien_conges, 0) AS ancien_conges,
+                e.poste_superieurF,
+                v.premiere_date_debut,
+                v.derniere_date_fin,
+                v.jours_pris,
+                v.nouveau_reste
+            FROM employes e
+            LEFT JOIN vue_conges_reste v ON e.id_employe = v.id_employe
+            WHERE e.id_employe = ?
+              AND TRIM(e.residenceF) = 'Les Œuvres Universitaires'
+        """, (employe_id,))
+
+        result = cursor.fetchone()
+
+        if not result:
+            # Debug: check if the employee exists with a different residenceF
+            cursor.execute(
+                "SELECT residenceF FROM employes WHERE id_employe = ?",
+                (employe_id,)
+            )
+            check = cursor.fetchone()
+            if check:
+                print(
+                    f"⚠️ Employé {employe_id} trouvé mais residenceF = '{check[0]}' "
+                    f"(attendu: 'Les Œuvres Universitaires')"
+                )
+            else:
+                print(f"⚠️ Employé {employe_id} n'existe pas dans la base")
+            conn.close()
+            return None
+
+        # Check the employee actually has a leave recorded
+        if not result[8]:  # premiere_date_debut is NULL
+            print(
+                f"⚠️ Employé {employe_id} ({result[1]} {result[2]}) "
+                f"n'a pas de congé enregistré cette année"
+            )
+            conn.close()
+            return None
+
+        # ✅ FIX 3: also fetch type_conge from conges table
+        cursor.execute("""
+            SELECT lieu, type_conge
+            FROM conges
+            WHERE id_employe = ?
+            ORDER BY date_debut DESC
+            LIMIT 1
+        """, (employe_id,))
+
+        lieu_result = cursor.fetchone()
+        lieu       = lieu_result[0] if lieu_result else "Chlef"        # ✅ French default
+        type_conge = lieu_result[1] if lieu_result else "Congé annuel" # ✅ was always ""
+
+        conn.close()
+
+        # ✅ FIX 4: use correct French key names throughout (nom→nomF, etc.)
+        # ✅ FIX 5: French numero_document format
+        pdf_data = {
+            "nom":             result[1] or "",
+            "prenom":          result[2] or "",
+            "grade":           result[3] or "",
+            "residence":       result[4] or "Les Œuvres Universitaires",
+            "departement":     result[5] or "",
+            "ancien_conges":   result[6] or 0,
+            "poste_superieur": result[7] or "",
+            "type_conge":      type_conge,                             # ✅ was always ""
+            "date_debut":      result[8] or "",
+            "date_fin":        result[9] or "",
+            "jours_pris":      str(result[10] or 0),
+            "nouveau_reste":   str(result[11] or 30),
+            "lieu":            lieu,
+            "annee":           str(datetime.now().year),
+            "date_actuelle":   datetime.now().strftime("%d/%m/%Y"),    # ✅ French date format
+            "numero_document": f"{employe_id:03d}/D.O.U.C/{datetime.now().year}",  # ✅ French ref
+        }
+
+        print(f"✅ Données PDF récupérées pour {pdf_data['nom']} {pdf_data['prenom']}")
+        return pdf_data
+
+    except ValueError as ve:
+        print(f"❌ Erreur: employe_id invalide '{employe_id}' – {ve}")
+        return None
+    except Exception as e:
+        print(f"❌ Erreur get_employee_pdf_fr_data: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+# ================================
+# GET MULTIPLE EMPLOYEES (FRENCH)
+# ================================
+def get_multiple_employees_pdf_fr_data(employe_ids):
+    """
+    Récupère les données PDF pour plusieurs employés.
+
+    Args:
+        employe_ids: Liste des IDs [1, 5, 8, 12]
+
+    Returns:
+        Liste de dictionnaires prêts pour le générateur PDF français.
+    """
+    employees_data = []
+
+    for employe_id in employe_ids:
+        pdf_data = get_employee_pdf_fr_data(employe_id)
+        if pdf_data:
+            employees_data.append(pdf_data)
+        else:
+            print(f"⚠️ Aucune donnée trouvée pour l'employé {employe_id}")
+
+    print(f"📊 {len(employees_data)}/{len(employe_ids)} employés avec données complètes")
+    return employees_data
