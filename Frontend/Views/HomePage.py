@@ -74,7 +74,23 @@ class HomePage(tk.Frame):
             if residence_name == "مديرية الخدمات الجامعية":
                 self.on_open_page("Dou")          # Page spéciale 1
             elif residence_name == "الإقامة الجامعية 19 ماي 1956":
-                self.on_open_page("mai19")        # Page spéciale 2
+                self.on_open_page("mai19") 
+            elif residence_name == "الإقامة الجامعية 1 نوفمبر 1954":
+                self.on_open_page("nov1954")
+            elif residence_name == "الإقامة الجامعية هني صالح":
+                self.on_open_page("heni")
+            elif residence_name == "الإقامة الجامعية طويل عبد القادر":
+                self.on_open_page("Touil")
+            elif residence_name == "الإقامة الجامعية أولاد فارس 03 ":
+                self.on_open_page("ouled_fares_03")
+            elif residence_name == "الإقامة الجامعية أولاد فارس 04 ":
+                self.on_open_page("ouled_fares_04")
+            elif residence_name == "الإقامة الجامعية الحسنية 1500 سرير":
+                self.on_open_page("hassania_1500")
+            elif residence_name == "الإقامة الجامعية الحسنية 2000 سرير":
+                self.on_open_page("hassania_2000")
+            elif residence_name == "الإقامة الجامعية تنس 500 سرير ":
+                self.on_open_page("tens_500")
             else:
                 self.on_open_page("home")         # Page par défaut
     

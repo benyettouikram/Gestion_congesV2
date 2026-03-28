@@ -4,7 +4,6 @@ import hashlib
 from datetime import datetime
 from typing import List, Dict, Optional
 from collections import defaultdict
-from tkinter import messagebox
 
 # ============================================================================
 # ✅ PATCH REPORTLAB - Fix openssl_md5 bug with Python 3.9+
@@ -58,7 +57,7 @@ def _draw_center_fr(c: canvas.Canvas, text: str, x: float, y: float,
     c.drawString(x - half, y, text)
 
 # ---------------------------------------------------------------------------
-# Signature search (reused from Arabic module)
+# Signature search
 # ---------------------------------------------------------------------------
 
 def find_signature_file(custom_path: Optional[str] = None) -> Optional[str]:
@@ -100,8 +99,8 @@ def draw_conge_page_fr(c: canvas.Canvas, data: Dict,
         signature_width : Width of the signature image in cm
     """
     PAGE_W, PAGE_H = A4
-    LEFT  = 2 * cm       # left margin
-    RIGHT = PAGE_W - 2 * cm  # right margin
+    LEFT  = 2 * cm
+    RIGHT = PAGE_W - 2 * cm
 
     # ── Header ──────────────────────────────────────────────────────────────
     _draw_center_fr(c, "REPUBLIQUE ALGERIENNE DEMOCRATIQUE ET POPULAIRE",
@@ -175,7 +174,7 @@ def draw_conge_page_fr(c: canvas.Canvas, data: Dict,
     lieu        = data.get("lieu", "")
 
     _draw_ltr(c,
-              f"L'intéressé(e) bénéficie d'un {type_conge} pour l'année {year}",
+              f"L'intéressé(e) bénéficie d'un congé {type_conge} pour l'année {year}",
               LEFT, y_cursor, size=11)
     y_cursor -= 1.2 * cm
 
@@ -190,7 +189,7 @@ def draw_conge_page_fr(c: canvas.Canvas, data: Dict,
     _draw_ltr(c, f"Lieu de résidence pendant le congé : {lieu}", LEFT, y_cursor, size=11)
 
     # ── Signature block ──────────────────────────────────────────────────────
-    SIG_X = PAGE_W / 2      # centred on page
+    SIG_X = PAGE_W / 2
     SIG_LABEL_Y = PAGE_H - 20.5 * cm
 
     _draw_center_fr(c, "Le Chef de la Division des Ressources Humaines",

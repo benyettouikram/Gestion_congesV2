@@ -69,14 +69,7 @@ class Navbar(tk.Frame):
         left_frame = tk.Frame(self, bg=PRIMARY_COLOR)
         left_frame.pack(side="left", padx=10, pady=15)
 
-        # === LANGUAGE BUTTON ===
-        self.lang_btn = CustomButton(
-            parent=left_frame,
-            text="العربية / Français",
-            color="#2E7D32",
-            command=self.toggle_language
-        )
-
+      
         # === OTHER NAVIGATION BUTTONS ===
         buttons_data = [
             ("السجل", "historique"),
