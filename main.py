@@ -1,5 +1,6 @@
 import tkinter as tk
 from Frontend.Components.Navbar import Navbar
+from Frontend.Views.Historique.Historique import Historique
 from Frontend.Views.HomePage import HomePage
 from Frontend.Views.Employes.EmployeHome import EmployesPage
 from Frontend.Views.Conges.Dou.Dou import ResidenceDou
@@ -20,6 +21,7 @@ class MainApp(tk.Tk):
 
         self.geometry("1000x600")
         self.title("Gestion de Congé")
+        self.state('zoomed')        
         self.configure(bg="#F5F6FA")
 
         # === Navbar ===
@@ -35,6 +37,7 @@ class MainApp(tk.Tk):
         self.pages = {
             "home": HomePage(self.container, on_open_page=self.show_page),
             "employers": EmployesPage(self.container),
+            "historique": Historique(self.container),
             "Dou": ResidenceDou(self.container),
             "mai19": Residence19mai(self.container),
             "nov1954": ResidenceNov1954(self.container),  # Placeholder, à remplacer par la classe réelle de cette résidence

@@ -348,7 +348,32 @@ def get_multiple_employees_pdf_Ar_data(employe_ids, residence_key: str = "dou"):
     return results
 
 
-# ─── get_employee_pdf_fr_data ─────────────────────────────────────────────────
+# ─── get_employee_pdf_fr_data ─
+TYPE_CONGE_AR_TO_FR = {
+        "عطلة سنوية":       "annuel",
+        "عطلة استثنائية":   "exceptionnel",
+        "استثنائية":        "exceptionnel",
+        "سنوية":            "annuel",
+    }
+
+LIEU_CONGE_AR_TO_FR = {
+        "داخل التراب الوطني":  "à l'intérieur du territoire national",
+        "خارج التراب الوطني":  "à l'extérieur du territoire national",
+    }
+
+
+def translate_type_conge(ar_value: str) -> str:
+        """Translate Arabic congé type to French. Falls back to original if not found."""
+        if not ar_value:
+            return "annuel"
+        return TYPE_CONGE_AR_TO_FR.get(ar_value.strip(), ar_value)
+
+
+def translate_lieu_conge(ar_value: str) -> str:
+    """Translate Arabic lieu to French. Falls back to original if not found."""
+    if not ar_value:
+        return "Chlef"
+    return LIEU_CONGE_AR_TO_FR.get(ar_value.strip(), ar_value)
 
 def get_employee_pdf_fr_data(employe_id: int, residence_key: str = "dou"):
     raw = _base_pdf_data(employe_id, residence_key)
@@ -358,8 +383,12 @@ def get_employee_pdf_fr_data(employe_id: int, residence_key: str = "dou"):
     result, lieu_row = raw
     employe_id = int(employe_id)
 
-    lieu       = lieu_row[0] if lieu_row else "Chlef"
-    type_conge = lieu_row[1] if lieu_row else "Congé annuel"
+    # ✅ Translate AR → FR
+    lieu_ar       = lieu_row[0] if lieu_row else "داخل التراب الوطني"
+    type_conge_ar = lieu_row[1] if lieu_row else "عطلة سنوية"
+
+    lieu       = translate_lieu_conge(lieu_ar)
+    type_conge = translate_type_conge(type_conge_ar)
 
     return {
         "nom":             result[4]  or "",
@@ -369,12 +398,12 @@ def get_employee_pdf_fr_data(employe_id: int, residence_key: str = "dou"):
         "departement":     result[9]  or "",
         "ancien_conges":   result[10] or 0,
         "poste_superieur": result[12] or "",
-        "type_conge":      type_conge,
+        "type_conge":      type_conge,          # ✅ now in French
         "date_debut":      result[13] or "",
         "date_fin":        result[14] or "",
         "jours_pris":      str(result[15] or 0),
         "nouveau_reste":   str(result[16]),
-        "lieu":            lieu,
+        "lieu":            lieu,                # ✅ now in French
         "annee":           str(datetime.now().year),
         "date_actuelle":   datetime.now().strftime("%d/%m/%Y"),
         "numero_document": f"{employe_id:03d}/D.O.U.C/{datetime.now().year}",

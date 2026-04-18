@@ -7,6 +7,10 @@ Used by ResidenceBase (frontend) for add / update / delete congé.
 All functions accept `residence_required` as an Arabic string
 resolved from the short key via GenericResidence.resolve_residence_ar().
 
+NOTE: historique is now written automatically by SQL triggers
+      (trg_after_insert_conge / trg_after_update_conge / trg_after_delete_conge).
+      No manual INSERT into historique is needed here.
+
 Import map
 ──────────
     from Bakend.models.Conges.GenericConge import (
@@ -49,6 +53,7 @@ def insert_conge(
 ):
     """
     Insert a new congé for any residence.
+    historique is recorded automatically by trg_after_insert_conge.
 
     Returns (True, success_message) or (False, error_message).
     """
@@ -76,6 +81,7 @@ def insert_conge(
         date_fin_global   = max(fin   for debut, fin in periodes)
 
         # ── 3. Insert main congé record ────────────────────────────────────
+        #       trg_after_insert_conge fires here automatically
         cursor.execute("""
             INSERT INTO conges
                 (id_employe, type_conge, date_debut, date_fin, nb_jours, lieu, statut)
@@ -102,14 +108,6 @@ def insert_conge(
                 (fin - debut).days + 1,
             ))
 
-        # ── 5. Historique ──────────────────────────────────────────────────
-        nb = len(periodes)
-        commentaire = f"تمت إضافة عطلة مع {nb} فترات" if nb > 1 else "تمت إضافة عطلة"
-        cursor.execute("""
-            INSERT INTO historique (id_employe, id_conge, action, annee, commentaire)
-            VALUES (?, ?, 'إضافة عطلة', ?, ?)
-        """, (id_employe, id_conge, datetime.now().year, commentaire))
-
         conn.commit()
         conn.close()
 
@@ -129,6 +127,7 @@ def insert_conge(
 def update_conge(id_conge, id_employe, type_conge, periodes, lieu):
     """
     Replace all periods of an existing congé.
+    historique is recorded automatically by trg_after_update_conge.
 
     Returns (True, success_message) or (False, error_message).
     """
@@ -155,6 +154,7 @@ def update_conge(id_conge, id_employe, type_conge, periodes, lieu):
         date_fin_global   = max(fin   for debut, fin in periodes)
 
         # ── 3. Update main row ─────────────────────────────────────────────
+        #       trg_after_update_conge fires here automatically
         cursor.execute("""
             UPDATE conges
             SET type_conge = ?,
@@ -187,14 +187,6 @@ def update_conge(id_conge, id_employe, type_conge, periodes, lieu):
                 (fin - debut).days + 1,
             ))
 
-        # ── 5. Historique ──────────────────────────────────────────────────
-        nb = len(periodes)
-        commentaire = f"تم تحديث العطلة مع {nb} فترات" if nb > 1 else "تم تحديث العطلة"
-        cursor.execute("""
-            INSERT INTO historique (id_employe, id_conge, action, annee, commentaire)
-            VALUES (?, ?, 'تحديث عطلة', ?, ?)
-        """, (id_employe, id_conge, datetime.now().year, commentaire))
-
         conn.commit()
         conn.close()
 
@@ -214,6 +206,7 @@ def update_conge(id_conge, id_employe, type_conge, periodes, lieu):
 def clear_conge_data(id_employe, residence_required):
     """
     Delete all congé records for an employee (employee row stays intact).
+    historique is recorded automatically by trg_after_delete_conge for each row.
 
     Parameters
     ----------
@@ -259,32 +252,20 @@ def clear_conge_data(id_employe, residence_required):
             )
             return False
 
-        # ── Collect congé IDs ──────────────────────────────────────────────
-        cursor.execute(
-            "SELECT id_conge FROM conges WHERE id_employe = ?", (employe_id,)
-        )
-        conge_ids = [r[0] for r in cursor.fetchall()]
-
         # ── Delete child periods first (FK) ────────────────────────────────
-        if conge_ids:
-            placeholders = ",".join("?" * len(conge_ids))
-            cursor.execute(
-                f"DELETE FROM conge_periodes WHERE id_conge IN ({placeholders})",
-                conge_ids,
+        #    Must delete conge_periodes BEFORE conges so the DELETE trigger
+        #    on conges still finds its periods if needed.
+        cursor.execute("""
+            DELETE FROM conge_periodes
+            WHERE id_conge IN (
+                SELECT id_conge FROM conges WHERE id_employe = ?
             )
+        """, (employe_id,))
 
         # ── Delete congés ──────────────────────────────────────────────────
+        #    trg_after_delete_conge fires once per row deleted
         cursor.execute("DELETE FROM conges WHERE id_employe = ?", (employe_id,))
         rows_affected = cursor.rowcount
-
-        # ── Historique (non-blocking) ──────────────────────────────────────
-        try:
-            cursor.execute("""
-                INSERT INTO historique (id_employe, id_conge, action, annee, commentaire)
-                VALUES (?, NULL, 'حذف عطلة', ?, ?)
-            """, (employe_id, datetime.now().year, f"تم حذف {rows_affected} عطلة/عطل"))
-        except Exception:
-            pass
 
         conn.commit()
         conn.close()
@@ -293,7 +274,8 @@ def clear_conge_data(id_employe, residence_required):
 
     except Exception as e:
         if "conn" in locals():
-            conn.rollback(); conn.close()
+            conn.rollback()
+            conn.close()
         print(f"❌ clear_conge_data: {e}")
         return False
 
