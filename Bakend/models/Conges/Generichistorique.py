@@ -1,15 +1,20 @@
 """
 Bakend/models/Historique/GenericHistorique.py
 ─────────────────────────────────────────────
-Reads historique directly — does NOT depend on the conges JOIN.
+Returns only the LATEST historique row per employee.
 
-Why: historique_conges VIEW joins LEFT JOIN conges. After a DELETE the
-conges row is gone and nb_jours / dates come back NULL. After an INSERT
-the screen may not have refreshed yet. Both cases cause empty rows.
+Column order matches the DataTable display (RTL layout):
+    The DataTable renders columns left→right on screen as:
+        المعرف | الاسم و اللقب | الرتبة | تاريخ الميلاد | عدد الأيام | السنة | الإجراء
 
-Fix: parse nb_jours out of h.commentaire, which the SQL triggers always
-write in the form:
-    'من: YYYY-MM-DD إلى: YYYY-MM-DD | عدد الأيام: N'
+    So the tuple must be:
+        index 0 → id_employe       (المعرف)
+        index 1 → employe_complet  (الاسم و اللقب)
+        index 2 → grade            (الرتبة)
+        index 3 → date_naissance   (تاريخ الميلاد)
+        index 4 → nb_jours         (عدد الأيام)
+        index 5 → annee            (السنة)
+        index 6 → action           (الإجراء)
 """
 
 import os
@@ -33,126 +38,94 @@ def _connect():
     return sqlite3.connect(path)
 
 
-# ─── helpers ──────────────────────────────────────────────────────────────────
-
 def _parse_nb_jours(commentaire):
-    """
-    Extract nb_jours from a trigger commentaire string.
-    Example:
-        'تمت إضافة عطلة تلقائياً | من: 2025-01-01 إلى: 2025-01-10 | عدد الأيام: 10'
-    Returns int or empty string if not found.
-    """
+    """Extract nb_jours from trigger commentaire string."""
     if not commentaire:
         return ""
     match = re.search(r'عدد الأيام[:\s]+(\d+)', commentaire)
     return int(match.group(1)) if match else ""
 
 
-# ─── get_historique_data ──────────────────────────────────────────────────────
+# ─── _fetch ───────────────────────────────────────────────────────────────────
 
-def get_historique_data():
+def _fetch(extra_where="", params=()):
     """
-    Return all historique rows ordered by most recent action.
+    One row per employee (most recent action only).
 
-    Reads historique + employes ONLY — no dependency on conges table.
-    nb_jours is parsed from h.commentaire so deleted congés still show
-    their day count correctly.
-
-    Tuple order (matches Historique.py DataTable column order):
-        index 0 → action           (الإجراء)
-        index 1 → annee            (السنة)
-        index 2 → nb_jours         (عدد الأيام)
-        index 3 → date_naissance   (تاريخ الميلاد)
-        index 4 → grade            (الرتبة)
-        index 5 → employe_complet  (الاسم و اللقب)
-        index 6 → id_employe       (المعرف)
+    Tuple order matches screen column order left→right:
+        0 → id_employe       (المعرف)
+        1 → employe_complet  (الاسم و اللقب)
+        2 → grade            (الرتبة)
+        3 → date_naissance   (تاريخ الميلاد)
+        4 → nb_jours         (عدد الأيام)   ← parsed from commentaire
+        5 → annee            (السنة)
+        6 → action           (الإجراء)
     """
     try:
         conn   = _connect()
         cursor = conn.cursor()
-        cursor.execute("""
+
+        query = f"""
             SELECT
-                h.action,
-                h.annee,
-                h.commentaire,
-                e.date_naissance,
-                e.grade,
+                h.id_employe,
                 e.nom || ' ' || e.prenom  AS employe_complet,
-                h.id_employe
+                e.grade,
+                e.date_naissance,
+                h.commentaire,
+                h.annee,
+                h.action
             FROM historique h
             LEFT JOIN employes e ON e.id_employe = h.id_employe
+            WHERE h.id_historique IN (
+                SELECT MAX(id_historique)
+                FROM historique
+                GROUP BY id_employe
+            )
+            {extra_where}
             ORDER BY h.date_action DESC
-        """)
+        """
+
+        cursor.execute(query, params)
         raw = cursor.fetchall()
         conn.close()
 
         rows = []
-        for action, annee, commentaire, date_naissance, grade, emp, id_emp in raw:
+        for id_emp, emp, grade, date_naissance, commentaire, annee, action in raw:
             rows.append((
-                action         or "",
-                annee          or "",
-                _parse_nb_jours(commentaire),
-                date_naissance or "",
-                grade          or "",
-                emp            or "",
-                id_emp         or "",
+                id_emp         or "",   # 0 → المعرف
+                emp            or "",   # 1 → الاسم و اللقب
+                grade          or "",   # 2 → الرتبة
+                date_naissance or "",   # 3 → تاريخ الميلاد
+                _parse_nb_jours(commentaire),  # 4 → عدد الأيام
+                annee          or "",   # 5 → السنة
+                action         or "",   # 6 → الإجراء
             ))
         return rows
 
     except Exception as e:
-        print(f"❌ get_historique_data: {e}")
+        print(f"❌ _fetch historique: {e}")
         return []
 
 
-# ─── search_historique ────────────────────────────────────────────────────────
+# ─── public API ───────────────────────────────────────────────────────────────
+
+def get_historique_data():
+    """Return the latest operation for every employee."""
+    return _fetch()
+
 
 def search_historique(search_text):
-    """
-    Filter by employee name, grade, action, or year.
-    Returns same tuple shape as get_historique_data().
-    """
+    """Filter latest-per-employee rows by name, grade, action, or year."""
     if not search_text or not search_text.strip():
         return get_historique_data()
 
     term = f"%{search_text.strip()}%"
-
-    try:
-        conn   = _connect()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT
-                h.action,
-                h.annee,
-                h.commentaire,
-                e.date_naissance,
-                e.grade,
-                e.nom || ' ' || e.prenom  AS employe_complet,
-                h.id_employe
-            FROM historique h
-            LEFT JOIN employes e ON e.id_employe = h.id_employe
-            WHERE
-                (e.nom || ' ' || e.prenom) LIKE ? OR
-                e.grade                    LIKE ? OR
-                h.action                   LIKE ? OR
-                CAST(h.annee AS TEXT)      LIKE ?
-            ORDER BY h.date_action DESC
-        """, (term, term, term, term))
-        raw = cursor.fetchall()
-        conn.close()
-
-        rows = []
-        for action, annee, commentaire, date_naissance, grade, emp, id_emp in raw:
-            rows.append((
-                action         or "",
-                annee          or "",
-                _parse_nb_jours(commentaire),
-                date_naissance or "",
-                grade          or "",
-                emp            or "",
-                id_emp         or "",
-            ))
-        return rows
-
-    except Exception as e:
-        print(f"❌ search_historique: {e}")
-        return []
+    extra = """
+        AND (
+            (e.nom || ' ' || e.prenom) LIKE ? OR
+            e.grade                    LIKE ? OR
+            h.action                   LIKE ? OR
+            CAST(h.annee AS TEXT)      LIKE ?
+        )
+    """
+    return _fetch(extra_where=extra, params=(term, term, term, term))
