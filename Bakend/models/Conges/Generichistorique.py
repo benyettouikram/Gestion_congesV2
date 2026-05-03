@@ -1,28 +1,11 @@
 """
 Bakend/models/Historique/GenericHistorique.py
-─────────────────────────────────────────────
-Returns only the LATEST historique row per employee.
-
-Column order matches the DataTable display (RTL layout):
-    The DataTable renders columns left→right on screen as:
-        المعرف | الاسم و اللقب | الرتبة | تاريخ الميلاد | عدد الأيام | السنة | الإجراء
-
-    So the tuple must be:
-        index 0 → id_employe       (المعرف)
-        index 1 → employe_complet  (الاسم و اللقب)
-        index 2 → grade            (الرتبة)
-        index 3 → date_naissance   (تاريخ الميلاد)
-        index 4 → nb_jours         (عدد الأيام)
-        index 5 → annee            (السنة)
-        index 6 → action           (الإجراء)
 """
 
 import os
 import re
 import sqlite3
 
-
-# ─── DB helper ────────────────────────────────────────────────────────────────
 
 def _db_path():
     base_dir = os.path.dirname(__file__)
@@ -35,52 +18,51 @@ def _connect():
     path = _db_path()
     if not os.path.exists(path):
         raise FileNotFoundError(f"Base de données introuvable : {path}")
-    return sqlite3.connect(path)
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA journal_mode=WAL;")   # ← prevents lock issues
+    conn.execute("PRAGMA foreign_keys=ON;")    # ← ensures triggers fire
+    return conn
 
 
 def _parse_nb_jours(commentaire):
-    """Extract nb_jours from trigger commentaire string."""
     if not commentaire:
         return ""
-    match = re.search(r'عدد الأيام[:\s]+(\d+)', commentaire)
+    match = re.search(r'عدد الأيام[:\s]*(\d+)', commentaire)
     return int(match.group(1)) if match else ""
 
 
-# ─── _fetch ───────────────────────────────────────────────────────────────────
-
 def _fetch(extra_where="", params=()):
-    """
-    One row per employee (most recent action only).
-
-    Tuple order matches screen column order left→right:
-        0 → id_employe       (المعرف)
-        1 → employe_complet  (الاسم و اللقب)
-        2 → grade            (الرتبة)
-        3 → date_naissance   (تاريخ الميلاد)
-        4 → nb_jours         (عدد الأيام)   ← parsed from commentaire
-        5 → annee            (السنة)
-        6 → action           (الإجراء)
-    """
     try:
         conn   = _connect()
         cursor = conn.cursor()
 
         query = f"""
             SELECT
+                h.id_historique,
                 h.id_employe,
-                e.nom || ' ' || e.prenom  AS employe_complet,
+                e.nom || ' ' || e.prenom   AS employe_complet,
                 e.grade,
                 e.date_naissance,
+                COALESCE(c.nb_jours,
+                    CAST(
+                        (SELECT nb_jours FROM conges
+                         WHERE id_conge = h.id_conge) 
+                    AS INTEGER)
+                )                          AS nb_jours,
                 h.commentaire,
                 h.annee,
-                h.action
+                h.action,
+                v.nouveau_reste
             FROM historique h
-            LEFT JOIN employes e ON e.id_employe = h.id_employe
-            WHERE h.id_historique IN (
-                SELECT MAX(id_historique)
+            INNER JOIN (
+                SELECT id_employe, MAX(id_historique) AS max_id
                 FROM historique
                 GROUP BY id_employe
-            )
+            ) latest ON h.id_historique = latest.max_id
+            LEFT JOIN employes         e ON e.id_employe = h.id_employe
+            LEFT JOIN conges           c ON c.id_conge   = h.id_conge
+            LEFT JOIN vue_conges_reste v ON v.id_employe = h.id_employe
+            WHERE 1=1
             {extra_where}
             ORDER BY h.date_action DESC
         """
@@ -90,15 +72,20 @@ def _fetch(extra_where="", params=()):
         conn.close()
 
         rows = []
-        for id_emp, emp, grade, date_naissance, commentaire, annee, action in raw:
+        for (id_hist, id_emp, emp, grade, date_naissance,
+             nb_jours, commentaire, annee, action, nouveau_reste) in raw:
+
+            jours = nb_jours if nb_jours is not None else _parse_nb_jours(commentaire)
+
             rows.append((
-                id_emp         or "",   # 0 → المعرف
-                emp            or "",   # 1 → الاسم و اللقب
-                grade          or "",   # 2 → الرتبة
-                date_naissance or "",   # 3 → تاريخ الميلاد
-                _parse_nb_jours(commentaire),  # 4 → عدد الأيام
-                annee          or "",   # 5 → السنة
-                action         or "",   # 6 → الإجراء
+                nouveau_reste  if nouveau_reste is not None else "",  # 0
+                annee          or "",                                  # 1
+                jours          or "",                                  # 2
+                grade          or "",                                  # 3
+                date_naissance or "",                                  # 4
+                emp            or "",                                  # 5
+                id_emp         or "",                                  # 6  hidden
+                id_hist,                                               # 7  hidden
             ))
         return rows
 
@@ -107,15 +94,101 @@ def _fetch(extra_where="", params=()):
         return []
 
 
-# ─── public API ───────────────────────────────────────────────────────────────
+def ensure_triggers(conn):
+    """
+    Re-create the three triggers if they are missing.
+    Call once at startup so the DB is always consistent.
+    """
+    cursor = conn.cursor()
+
+    cursor.executescript("""
+        CREATE TRIGGER IF NOT EXISTS trg_after_insert_conge
+        AFTER INSERT ON conges
+        BEGIN
+            INSERT INTO historique (id_employe, id_conge, action, annee, commentaire)
+            VALUES (
+                NEW.id_employe,
+                NEW.id_conge,
+                'إضافة عطلة',
+                CAST(strftime('%Y', NEW.date_debut) AS INTEGER),
+                'تمت إضافة عطلة تلقائياً | ' ||
+                'من: ' || NEW.date_debut || ' إلى: ' || NEW.date_fin ||
+                ' | عدد الأيام: ' || NEW.nb_jours
+            );
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_after_update_conge
+        AFTER UPDATE ON conges
+        BEGIN
+            INSERT INTO historique (id_employe, id_conge, action, annee, commentaire)
+            VALUES (
+                NEW.id_employe,
+                NEW.id_conge,
+                'تحديث عطلة',
+                CAST(strftime('%Y', NEW.date_debut) AS INTEGER),
+                'تم تحديث العطلة | ' ||
+                'من: ' || NEW.date_debut || ' إلى: ' || NEW.date_fin ||
+                ' | عدد الأيام: ' || NEW.nb_jours
+            );
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_after_delete_conge
+        AFTER DELETE ON conges
+        BEGIN
+            INSERT INTO historique (id_employe, id_conge, action, annee, commentaire)
+            VALUES (
+                OLD.id_employe,
+                OLD.id_conge,
+                'حذف عطلة',
+                CAST(strftime('%Y', OLD.date_debut) AS INTEGER),
+                'تم حذف العطلة | ' ||
+                'من: ' || OLD.date_debut || ' إلى: ' || OLD.date_fin ||
+                ' | عدد الأيام: ' || OLD.nb_jours
+            );
+        END;
+    """)
+    conn.commit()
+
+
+def init_db():
+    """Call this once when the app starts."""
+    try:
+        conn = _connect()
+        ensure_triggers(conn)
+        conn.close()
+        print("✅ DB triggers verified.")
+    except Exception as e:
+        print(f"❌ init_db: {e}")
+
+
+def delete_historique(id_historique):
+    try:
+        conn   = _connect()
+        cursor = conn.cursor()
+
+        id_historique = int(id_historique)
+        cursor.execute(
+            "DELETE FROM historique WHERE id_historique = ?",
+            (id_historique,)
+        )
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        if affected:
+            print(f"✅ historique row {id_historique} deleted")
+        else:
+            print(f"⚠️  no row found with id_historique={id_historique}")
+
+    except Exception as e:
+        print(f"❌ delete_historique: {e}")
+
 
 def get_historique_data():
-    """Return the latest operation for every employee."""
     return _fetch()
 
 
 def search_historique(search_text):
-    """Filter latest-per-employee rows by name, grade, action, or year."""
     if not search_text or not search_text.strip():
         return get_historique_data()
 

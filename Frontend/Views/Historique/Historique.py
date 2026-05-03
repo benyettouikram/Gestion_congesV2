@@ -1,19 +1,5 @@
 """
 Frontend/Pages/Historique.py
-─────────────────────────────
-السجل screen — columns now match the RTL DataTable display order.
-
-Column order (left→right on screen):
-    المعرف | الاسم و اللقب | الرتبة | تاريخ الميلاد | عدد الأيام | السنة | الإجراء
-
-Tuple index mapping:
-    0 → id_employe       (المعرف)
-    1 → employe_complet  (الاسم و اللقب)
-    2 → grade            (الرتبة)
-    3 → date_naissance   (تاريخ الميلاد)
-    4 → nb_jours         (عدد الأيام)
-    5 → annee            (السنة)
-    6 → action           (الإجراء)
 """
 
 import tkinter as tk
@@ -25,12 +11,42 @@ from Frontend.Components.SearchBar import SearchBar
 from Bakend.models.Conges.Generichistorique import (
     get_historique_data,
     search_historique,
+    delete_historique,
+    init_db,
 )
+
+
+COLUMNS = (
+    "Action",
+    "nouveau_reste",
+    "annee",
+    "nb_jours",
+    "grade",
+    "date_naissance",
+    "nom_prenom",
+    "id_employe",
+    "id_historique",
+)
+
+HEADERS = [
+    ("Action",         "الإجراء",         120),
+    ("nouveau_reste",  "الرصيد المتبقي",  130),
+    ("annee",          "السنة",            80),
+    ("nb_jours",       "عدد الأيام",      100),
+    ("grade",          "الرتبة",          120),
+    ("date_naissance", "تاريخ الميلاد",   130),
+    ("nom_prenom",     "الاسم و اللقب",   200),
+    ("id_employe",     "",                  0),
+    ("id_historique",  "",                  0),
+]
 
 
 class Historique(tk.Frame):
     def __init__(self, parent):
         super().__init__(parent, bg="#F2F4F7")
+
+        # ── Ensure triggers exist every time this page opens ───────────────
+        init_db()
 
         # ── Title ──────────────────────────────────────────────────────────
         tk.Label(
@@ -59,44 +75,28 @@ class Historique(tk.Frame):
             command=self.refresh,
         ).pack(side="right", padx=(10, 0))
 
-        # ── Columns — order matches screen left→right ──────────────────────
-        self.columns = (
-            "id",            # 0 → المعرف
-            "الاسم و اللقب", # 1
-            "الرتبة",        # 2
-            "تاريخ الميلاد", # 3
-            "عدد الأيام",    # 4
-            "السنة",         # 5
-            "Action",        # 6 → الإجراء
-        )
-
         # ── DataTable ──────────────────────────────────────────────────────
         self.table = DataTable(
             self,
-            self.columns,
+            COLUMNS,
             get_historique_data(),
-            on_delete=self.view_details,
+            on_delete=self.delete_row,
         )
         self.table.pack(fill="both", expand=True, padx=20, pady=10)
 
-        # ── Column headers & widths ────────────────────────────────────────
-        headers = [
-            ("id",           "المعرف",         80),
-            ("الاسم و اللقب", "الاسم و اللقب",  200),
-            ("الرتبة",        "الرتبة",         120),
-            ("تاريخ الميلاد", "تاريخ الميلاد",  130),
-            ("عدد الأيام",    "عدد الأيام",     100),
-            ("السنة",         "السنة",          80),
-            ("Action",       "الإجراء",        120),
-        ]
-        for col, title_text, width in headers:
+        for col, title_text, width in HEADERS:
             self.table.tree.heading(col, text=title_text, anchor="e")
-            self.table.tree.column(col, anchor="e", width=width)
+            self.table.tree.column(
+                col,
+                anchor="e",
+                width=width,
+                minwidth=0 if width == 0 else 20,
+                stretch=width != 0,
+            )
 
     # ── public methods ─────────────────────────────────────────────────────
 
     def refresh(self):
-        """Reload from DB — call after any congé insert/update/delete."""
         self.table.update_data(get_historique_data())
 
     def filter_data(self, search_text=None):
@@ -105,17 +105,22 @@ class Historique(tk.Frame):
         else:
             self.table.update_data(get_historique_data())
 
-    def view_details(self, row):
+    def delete_row(self, row):
         if not row:
             return
-        messagebox.showinfo("تفاصيل السجل", (
-            f"تفاصيل السجل\n"
-            f"───────────────\n"
-            f"المعرف: {row[0]}\n"
-            f"الموظف: {row[1]}\n"
-            f"الرتبة: {row[2]}\n"
-            f"تاريخ الميلاد: {row[3]}\n"
-            f"عدد الأيام: {row[4]}\n"
-            f"السنة: {row[5]}\n"
-            f"الإجراء: {row[6]}"
-        ))
+
+        try:
+            id_hist = int(row[8])
+        except (ValueError, IndexError):
+            messagebox.showerror("خطأ", f"لم يتم العثور على معرف السجل.\n{row}")
+            return
+
+        confirm = messagebox.askyesno(
+            "تأكيد الحذف",
+            f"هل تريد حذف سجل الموظف:\n{row[6]}؟"
+        )
+        if not confirm:
+            return
+
+        delete_historique(id_hist)
+        self.refresh()

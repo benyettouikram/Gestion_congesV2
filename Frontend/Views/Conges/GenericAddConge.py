@@ -29,7 +29,7 @@ from datetime import datetime, timedelta
 from Frontend.Theme.colors import PRIMARY_COLOR
 from Frontend.Utils.event_bus import publish
 
-# ── Generic backend (works for every residence) ────────────────────────────────
+# ── Generic backend (write) ────────────────────────────────────────────────────
 from Bakend.models.Conges.GenericConge import (
     insert_conge,
     update_conge,
@@ -38,6 +38,9 @@ from Bakend.models.Conges.GenericConge import (
 from Bakend.models.Conges.conge_validations import (
     check_employe_has_conge_en_cours,
     validate_conge_solde,
+)
+from Bakend.models.Conges.GenericResidence import (
+    get_conge_by_employe_id,
 )
 
 
@@ -83,6 +86,7 @@ class GenericAddConge(tk.Toplevel):
         self.geometry("750x850")
         self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self.withdraw()  # hide window until position is fixed
 
         # ── Tk variables ───────────────────────────────────────────────────
         self.nom_var        = tk.StringVar(value=self.employe.get("nom",    "غير معروف"))
@@ -102,29 +106,15 @@ class GenericAddConge(tk.Toplevel):
             "border":      "#e0e0e0",
         }
 
-        # ── INSERT guard: block if employee already has a congé ────────────
-        if not self.is_update_mode:
-            has_conge, conge_info = check_employe_has_conge_en_cours(self.id_employe)
-            if has_conge:
-                self.destroy()
-                if messagebox.askyesno(
-                    "تنبيه",
-                    f"هذا الموظف لديه عطلة بالفعل!\n\n"
-                    f"نوع العطلة: {conge_info['type_conge']}\n"
-                    f"من: {conge_info['date_debut']}  إلى: {conge_info['date_fin']}\n"
-                    f"الأيام: {conge_info['nb_jours']}  |  الحالة: {conge_info['statut']}\n\n"
-                    f"هل تريد تعديل العطلة الموجودة؟"
-                ):
-                    messagebox.showinfo("معلومات", "يرجى استخدام زر 'تعديل' لتحديث العطلة الموجودة")
-                return
-
+        # ⚡ BUILD UI IMMEDIATELY (before DB queries)
         self._apply_styles()
         self._build_ui()
 
-        if self.is_update_mode and self.id_conge:
-            self._load_existing_periodes()
+        # ⚡ CENTER AFTER UI IS BUILT (with proper timing)
+        self.after(10, self._center)  # Small delay to ensure UI is fully rendered
 
-        self._center()
+        # ⚡ RUN VALIDATIONS IN BACKGROUND (non-blocking)
+        self.after(100, self._async_validate_and_load)
 
     # =========================================================================
     #  STYLES
@@ -393,11 +383,104 @@ class GenericAddConge(tk.Toplevel):
     # =========================================================================
 
     def _center(self):
-        self.update_idletasks()
-        x = (self.winfo_screenwidth()  - self.winfo_width())  // 2
-        y = (self.winfo_screenheight() - self.winfo_height()) // 2
-        self.geometry(f"+{x}+{y}")
+        """Center the window on screen with fixed size."""
+        # Force window to update
+        self.update()
+
+        # Get screen dimensions
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+
+        # Fixed window size (as set in __init__)
+        window_width = 750
+        window_height = 850
+
+        # Calculate center position
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+
+        # Ensure position is not negative
+        x = max(0, x)
+        y = max(0, y)
+
+        # Set geometry with size and position
+        self.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        self.deiconify()  # show the window only after it is centered
+
+        # Alternative: Use Tkinter's built-in centering
+        # self.eval('tk::PlaceWindow %s center' % self.winfo_pathname(self.winfo_id()))
 
     def _on_closing(self):
         GenericAddConge._current_instance = None
         self.destroy()
+
+    # =========================================================================
+    #  ⚡ ASYNC VALIDATION & LOADING (Non-blocking)
+    # =========================================================================
+
+    def _async_validate_and_load(self):
+        """
+        Run expensive DB queries AFTER form is visible (non-blocking).
+        If employee has existing congé in ADD mode, automatically load it.
+        """
+        try:
+            # ── Check if employee already has a congé (INSERT mode only) ────
+            if not self.is_update_mode:
+                has_conge, conge_info = check_employe_has_conge_en_cours(self.id_employe)
+                if has_conge:
+                    # ✅ Auto-load existing congé data
+                    conge_data = get_conge_by_employe_id(self.id_employe)
+                    if conge_data:
+                        # Switch to UPDATE mode automatically
+                        self.is_update_mode = True
+                        self.id_conge = conge_data.get("id_conge")
+                        self.conge_data = conge_data
+                        
+                        # Update header
+                        self._update_header_to_update_mode()
+                        
+                        # Load existing periods
+                        self._load_existing_periodes()
+                        
+                        # Inform user
+                        messagebox.showinfo(
+                            "تنويه",
+                            f"✅ تم تحميل العطلة الموجودة تلقائياً\n\n"
+                            f"نوع العطلة: {conge_info['type_conge']}\n"
+                            f"من: {conge_info['date_debut']}  إلى: {conge_info['date_fin']}\n"
+                            f"الأيام: {conge_info['nb_jours']}\n\n"
+                            f"يمكنك الآن تعديلها مباشرة من هنا"
+                        )
+                    else:
+                        messagebox.showwarning(
+                            "تنبيه",
+                            "هذا الموظف لديه عطلة بالفعل، لكن لم يتم العثور على بيانات العطلة"
+                        )
+                        self._on_closing()
+                        return
+
+            # ── Load existing periods (UPDATE mode only) ────────────────────
+            elif self.is_update_mode and self.id_conge:
+                self._load_existing_periodes()
+
+        except Exception as e:
+            print(f"❌ _async_validate_and_load: {e}")
+            import traceback; traceback.print_exc()
+
+    def _update_header_to_update_mode(self):
+        """Update the header to show UPDATE mode."""
+        try:
+            # Find and update the header label
+            for widget in self.winfo_children():
+                if isinstance(widget, tk.Frame):
+                    for child in widget.winfo_children():
+                        if isinstance(child, ttk.Label):
+                            try:
+                                text = child.cget("text")
+                                if text == "إضافة عطلة":
+                                    child.config(text="تعديل عطلة")
+                                    break
+                            except:
+                                pass
+        except Exception as e:
+            print(f"⚠️ _update_header_to_update_mode: {e}")
